@@ -1,36 +1,79 @@
 <template>
   <div>
-    <h2>IndexedDB</h2>
+    <div class="modal fade" id="viewPictureModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h1 class="modal-title fs-5" id="exampleModalLabel">View Picture</h1>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <img :src="currentImg" alt="Image" class="d-inline-block">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="mb-3">IndexedDB</h2>
+    <table class="table">
+      <thead>
+      <tr>
+        <th scope="col">SSN</th>
+        <th scope="col">Name</th>
+        <th scope="col">Age</th>
+        <th scope="col">Email</th>
+        <th scope="col">Picture</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr v-for="customer in customers" :key="customer.ssn">
+        <th scope="row">{{ customer.ssn }}</th>
+        <td>{{ customer.name }}</td>
+        <td>{{ customer.age }}</td>
+        <td>{{ customer.email }}</td>
+        <td>
+          <button class="btn btn-sm btn-primary"
+                    data-bs-toggle="modal" data-bs-target="#viewPictureModal"
+                    @click="viewModal(customer.file)">
+            View Image
+          </button>
+        </td>
+      </tr>
+      </tbody>
+    </table>
+    <h2 class="my-3">CRUD Operations</h2>
     <form class="text-start">
       <div class="mb-3">
         <label for="ssnInput" class="form-label">SSN</label>
-        <input v-model="dataInput.ssn" type="text" class="form-control" id="ssnInput" placeholder="666-66-6666">
+        <input :disabled="readOnly" v-model="dataInput.ssn" type="text" class="form-control" id="ssnInput" placeholder="666-66-6666">
       </div>
       <div class="mb-3">
         <label for="nameInput" class="form-label">Name</label>
-        <input :disabled="readOnly" v-model="dataInput.name" type="text" class="form-control" id="nameInput" placeholder="Alice">
+        <input v-model="dataInput.name" type="text" class="form-control" id="nameInput" placeholder="Alice">
       </div>
       <div class="mb-3">
         <label for="ageInput" class="form-label">Age</label>
-        <input :disabled="readOnly" v-model="dataInput.age" type="number" class="form-control" id="ageInput" placeholder="28">
+        <input v-model="dataInput.age" type="number" class="form-control" id="ageInput" placeholder="28">
       </div>
       <div class="mb-3">
         <label for="emailInput" class="form-label">Email</label>
-        <input :disabled="readOnly" v-model="dataInput.email" type="email" class="form-control" id="emailInput" placeholder="alice@example.com">
+        <input v-model="dataInput.email" type="email" class="form-control" id="emailInput" placeholder="alice@example.com">
       </div>
       <div class="mb-3">
         <label class="form-label" for="input-blob">Upload</label>
         <input @change="onFileChange" type="file" accept="image/png, image/gif, image/jpeg" class="form-control" id="input-blob">
       </div>
       <div v-if="readOnly" class="mb-3">
-        <label class="form-label" for="input-blob">Image Preview</label>
+        <p class="me-3">Image Preview</p>
         <img :src="dataInput.file"  alt="Image"/>
       </div>
     </form>
     <p>Status: {{ addedData }}</p>
     <p v-show="!!errMsg" class="text-danger">{{ errMsg }}</p>
     <div class="d-flex justify-content-center">
-      <button class="btn btn-dark me-3" @click="getAll">Get All Data</button>
       <button class="btn btn-primary me-3" @click="getData">Get Data</button>
       <button class="btn btn-success me-3" @click="addData">Add Data</button>
       <button class="btn btn-warning me-3" @click="updateData">Update Data</button>
@@ -41,12 +84,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive } from 'vue';
+import { ref, onMounted, reactive, toRaw } from 'vue';
 import data from 'bootstrap/js/src/dom/data.js';
 
 const dbName = "the_name";
 // const customerToAdd = { ssn: "666-66-6666", name: "Alice", age: 28, email: "alice@example.com" };
 
+const customers = ref([])
 const dataInput = reactive({
   ssn: '',
   name: '',
@@ -58,6 +102,7 @@ const errMsg = ref('')
 
 const addedData = ref(null);
 const readOnly = ref(false)
+const currentImg = ref('')
 
 const reader = new FileReader()
 
@@ -90,18 +135,13 @@ const addData = () => {
     const addTransaction = db.transaction("customers", "readwrite");
     const customerObjectStore = addTransaction.objectStore("customers");
 
-    const addRequest = customerObjectStore.add({
-      ssn: dataInput.ssn,
-      name: dataInput.name,
-      age: dataInput.age,
-      email: dataInput.email,
-      file: dataInput.file
-    });
+    const addRequest = customerObjectStore.add(toRaw(dataInput))
 
     addRequest.onsuccess = (event) => {
       console.log("Data added successfully");
       addedData.value = "Data added successfully";
       resetInput()
+      getAll()
     };
 
     addRequest.onerror = (event) => {
@@ -135,14 +175,12 @@ const getData = () => {
     const readTransaction = db.transaction("customers", "readonly");
     const customerObjectStore = readTransaction.objectStore("customers");
 
-    console.log(dataInput.ssn)
     const customersCursor = customerObjectStore.get(dataInput.ssn);
 
     customersCursor.onsuccess = (event) => {
       const result = event.target.result;
 
       if (result) {
-        console.log(result)
         dataInput.name = result.name
         dataInput.age = result.age
         dataInput.email = result.email
@@ -163,7 +201,38 @@ const getData = () => {
 }
 
 const getAll = () => {
+  const request = indexedDB.open(dbName, 2);
 
+  request.onerror = (event) => {
+    console.error("Error opening database:", event.target.error);
+  };
+
+  request.onsuccess = (event) => {
+    const db = event.target.result;
+
+    const readTransaction = db.transaction("customers", "readonly");
+    const customerObjectStore = readTransaction.objectStore("customers");
+
+    const customersCursor = customerObjectStore.openCursor();
+
+    customers.value = []
+    customersCursor.onsuccess = (event) => {
+      const cursor = event.target.result;
+
+      if (cursor) {
+        customers.value.push(cursor.value);
+        cursor.continue();
+      } else {
+        console.log("Data read successfully");
+        db.close();
+      }
+    };
+
+    customersCursor.onerror = (event) => {
+      console.error("Error reading data", event.target.error);
+      db.close();
+    };
+  };
 }
 
 const deleteData = () => {
@@ -190,6 +259,8 @@ const deleteData = () => {
     deleteRequest.onsuccess = (event) => {
       console.log("Data deleted successfully");
       addedData.value = "Data deleted successfully";
+      resetInput()
+      getAll()
     };
 
     deleteRequest.onerror = (event) => {
@@ -205,7 +276,41 @@ const deleteData = () => {
 }
 
 const updateData = () => {
+  const request = indexedDB.open(dbName, 2);
 
+  request.onerror = (event) => {
+    console.error("Error opening database:", event.target.error);
+  };
+
+  request.onsuccess = (event) => {
+    const db = event.target.result;
+
+    const updateTransaction = db.transaction("customers", "readwrite");
+    const customerObjectStore = updateTransaction.objectStore("customers");
+
+    const updateRequest = customerObjectStore.put(toRaw(dataInput));
+
+    updateRequest.onsuccess = (event) => {
+      console.log("Data updated successfully");
+      addedData.value = "Data updated successfully";
+      resetInput()
+      getAll()
+    };
+
+    updateRequest.onerror = (event) => {
+      console.error("Error updating data", event.target.error);
+      addedData.value = "Error updating data, " + event.target.error;
+    };
+
+    updateTransaction.oncomplete = () => {
+      console.log("Update transaction completed");
+      db.close();
+    };
+  };
+}
+
+const viewModal = (url) => {
+  currentImg.value = url
 }
 
 const validateInput = () => {
@@ -220,6 +325,7 @@ const resetInput = () => {
   dataInput.name = ''
   dataInput.age = 0
   dataInput.email = ''
+  dataInput.file = ''
   readOnly.value = false
   errMsg.value = ''
   addedData.value = ''
@@ -229,5 +335,6 @@ onMounted(() => {
   reader.addEventListener('load', () => {
     dataInput.file = reader.result
   })
+  getAll()
 })
 </script>
